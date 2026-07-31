@@ -1,87 +1,89 @@
-# Bambu NFC — чтение и перезапись тегов катушек Bambu Lab
+**English** | [Русский](README.ru.md)
 
-Инструмент для работы с RFID-метками катушек филамента **Bambu Lab** (MIFARE Classic 1K)
-через ридер **PN532** на macOS. Определяет состояние метки, показывает данные филамента,
-снимает дампы и перезаписывает метку в стандартный **NDEF-тег со ссылкой (URL)**.
+# Bambu NFC — read & rewrite Bambu Lab spool tags
 
-Ключи шифрования метки (KeyA и KeyB) **вычисляются из UID** — крэк не требуется:
+A tool for the RFID tags on **Bambu Lab** filament spools (MIFARE Classic 1K)
+using a **PN532** reader on macOS. It diagnoses the tag state, shows filament
+data, dumps the tag, and rewrites it into a standard **NDEF tag holding a link (URL)**.
+
+The tag's encryption keys (KeyA and KeyB) are **derived from the UID** — no cracking required:
 
 - `KeyA[sector] = HKDF-SHA256(UID, salt=master, info="RFID-A\0")`
 - `KeyB[sector] = HKDF-SHA256(UID, salt=master, info="RFID-B\0")`
 
-> На новых тегах (напр. PLA Lite) KeyB **не нулевой**, вопреки старой документации —
-> он тоже выводится из UID, только с контекстом `RFID-B`.
+> On newer tags (e.g. PLA Lite) KeyB is **not zero**, contrary to old docs —
+> it is also derived from the UID, just with the `RFID-B` context.
 
 ---
 
-## Требования
+## Requirements
 
-### Железо
-- Модуль **PN532** в режиме **UART**, подключённый через USB-UART переходник
-  (обычно чип **CH340**, определяется как `/dev/cu.usbserial-*`).
-- Mac (Apple Silicon; инструкция под Homebrew в `/opt/homebrew`).
+### Hardware
+- A **PN532** module in **UART** mode, connected via a USB-UART adapter
+  (usually a **CH340** chip, shows up as `/dev/cu.usbserial-*`).
+- A Mac (Apple Silicon; the instructions assume Homebrew at `/opt/homebrew`).
 
-### ПО
+### Software
 - [Homebrew](https://brew.sh)
-- `libnfc` (ридер), компилятор C (Xcode Command Line Tools), Python 3.8+
+- `libnfc` (reader), a C compiler (Xcode Command Line Tools), Python 3.8+
 
 ---
 
-## Установка
+## Installation
 
-### 1. Зависимости
+### 1. Dependencies
 
 ```bash
-# Command Line Tools (компилятор cc), если ещё нет
+# Command Line Tools (the cc compiler), if not installed yet
 xcode-select --install
 
 # libnfc
 brew install libnfc
 ```
 
-Python-скрипт использует только стандартную библиотеку — доп. пакеты не нужны.
+The Python script uses only the standard library — no extra packages needed.
 
-### 2. Определите порт ридера
+### 2. Find the reader's port
 
-Подключите PN532 и найдите его порт:
+Plug in the PN532 and find its port:
 
 ```bash
 ls /dev/cu.usbserial-*
 ```
 
-Например `/dev/cu.usbserial-110`. Запомните это значение для следующего шага.
+For example `/dev/cu.usbserial-110`. Remember this value for the next step.
 
-### 3. Настройте libnfc под PN532 UART
+### 3. Configure libnfc for PN532 UART
 
-libnfc из Homebrew ищет конфиг **внутри Cellar**, а не в `/opt/homebrew/etc`.
-Создайте описание устройства (подставьте свой порт и версию libnfc):
+Homebrew's libnfc looks for its config **inside Cellar**, not in `/opt/homebrew/etc`.
+Create the device description (substitute your own port and libnfc version):
 
 ```bash
 NFC_DIR="/opt/homebrew/Cellar/libnfc/1.8.0/etc/nfc"
 mkdir -p "$NFC_DIR/devices.d"
 
-# разрешить интрузивное сканирование
+# allow intrusive scan
 printf 'allow_intrusive_scan = true\n' > "$NFC_DIR/libnfc.conf"
 
-# описание PN532 UART (замените порт на свой)
+# PN532 UART description (replace the port with yours)
 printf 'name = "PN532 UART"\nconnstring = "pn532_uart:/dev/cu.usbserial-110"\n' \
   > "$NFC_DIR/devices.d/pn532_uart.conf"
 ```
 
-Проверьте связь с ридером (без метки):
+Check the reader (no tag needed):
 
 ```bash
 nfc-list
 ```
 
-Должно быть `NFC device: PN532 UART opened`. Если пишет `No NFC device found` —
-проверьте порт и что конфиг лежит именно в пути `Cellar/.../etc/nfc`.
+You should see `NFC device: PN532 UART opened`. If it says `No NFC device found`,
+check the port and that the config sits under `Cellar/.../etc/nfc`.
 
-### 4. Соберите C-хелпер
+### 4. Build the C helper
 
-Низкоуровневые операции с меткой выполняет `nfc_helper` (libnfc напрямую —
-`nfc-mfclassic` на «гуляющем» теге делает частичные записи).
-Скрипт **собирает его автоматически** при первом запуске, но можно и вручную:
+Low-level tag operations are done by `nfc_helper` (libnfc directly — `nfc-mfclassic`
+does partial writes on a tag that drifts in the field).
+The script **builds it automatically** on first run, but you can do it manually:
 
 ```bash
 cc nfc_helper.c -I/opt/homebrew/include -L/opt/homebrew/lib -lnfc -o nfc_helper
@@ -89,35 +91,44 @@ cc nfc_helper.c -I/opt/homebrew/include -L/opt/homebrew/lib -lnfc -o nfc_helper
 
 ---
 
-## Запуск
+## Usage
 
 ```bash
 python3 bambu_nfc.py
 ```
 
-Скрипт по шагам:
+### Interface language
 
-1. Просит приложить метку, читает **UID**.
-2. **Диагностика состояния** — определяет, засекречена ли метка:
+Russian / English. Language selection (default: from your system locale, otherwise English):
 
-   | Состояние | Засекречена |
+```bash
+python3 bambu_nfc.py --lang en      # argument
+BAMBU_LANG=en python3 bambu_nfc.py  # environment variable
+```
+
+The script, step by step:
+
+1. Asks you to place the tag, reads the **UID**.
+2. **State diagnosis** — determines whether the tag is secured:
+
+   | State | Secured |
    |---|---|
-   | Оригинальный Bambu (data read-only, access `87878769`) | **ДА** |
-   | Bambu, уже разлочена | НЕТ |
-   | Перезаписана в NDEF (публичные ключи) | НЕТ |
-   | Чистая / заводская (ключи `FFFFFFFFFFFF`) | НЕТ |
-   | Неизвестная | ? |
+   | Original Bambu (data read-only, access `87878769`) | **YES** |
+   | Bambu, already unlocked | NO |
+   | Rewritten as NDEF (public keys) | NO |
+   | Blank / factory (keys `FFFFFFFFFFFF`) | NO |
+   | Unknown | ? |
 
-3. Показывает **меню доступных действий** под текущее состояние:
-   - Записать ссылку (URL) — при необходимости снимает защиту автоматически
-   - Показать ссылку с метки (если есть NDEF)
-   - Показать данные филамента Bambu (тип, цвет, вес, диаметр)
-   - Снять дамп в файл
-   - Стереть в заводское состояние
+3. Shows an **actions menu** adapted to the current state:
+   - Write a link (URL) — unlocks automatically if needed
+   - Show the link on the tag (if NDEF present)
+   - Show Bambu filament data (type, color, weight, diameter)
+   - Save a dump to a file
+   - Wipe to factory state
 
-### Отладка
+### Debug
 
-Подробный вывод по каждому блоку при записи:
+Per-block detail while writing:
 
 ```bash
 BAMBU_DBG=1 python3 bambu_nfc.py
@@ -125,107 +136,104 @@ BAMBU_DBG=1 python3 bambu_nfc.py
 
 ---
 
-## Пример работы
+## Example run
 
-Запись ссылки на **засекреченную оригинальную** метку Bambu (защита снимается автоматически):
+Writing a link to a **secured original** Bambu tag (protection is removed automatically):
 
 ```text
-$ python3 bambu_nfc.py
-Bambu NFC — инструмент метки катушки
-PN532 + libnfc. Диагностика состояния и доступные действия.
+$ python3 bambu_nfc.py --lang en
+Bambu NFC — spool tag tool
+PN532 + libnfc. State diagnosis and available actions.
 
-━━━ Определение метки ━━━
-» Приложите тег к ридеру и нажмите Enter...
+━━━ Tag detection ━━━
+» Place the tag on the reader and press Enter...
   ✓ UID: 02158BEF
-  Диагностика секторов...
-  Чтение содержимого...
+  Diagnosing sectors...
+  Reading contents...
 
-━━━ Состояние метки ━━━
-  Тип метки  : Оригинальный Bambu — ЗАСЕКРЕЧЕНА (data read-only)
-  Засекречена: ДА
-  Access-биты: 87878769
-  data-блоки защищены от записи; для записи нужно снять защиту (сделаю автоматически).
+━━━ Tag state ━━━
+  Tag type   : Original Bambu — SECURED (data read-only)
+  Secured    : YES
+  Access bits: 87878769
+  data blocks are write-protected; writing will unlock them automatically.
 
-━━━ Доступные действия ━━━
-  1) Записать ссылку (URL)
-  2) Показать данные филамента Bambu
-  3) Снять дамп в файл
-  4) Стереть в заводское состояние
-  0) Выход
-? Выберите действие [1]: 1
-? Введите URL [https://bambulab.com]:
-  ✓ Образ собран: «https://bambulab.com» (секторов под данные: 1)
-? Записать? Это необратимо (y/n) [y]: y
-  Метка засекречена — снимаю защиту...
+━━━ Available actions ━━━
+  1) Write link (URL)
+  2) Show Bambu filament data
+  3) Save dump to file
+  4) Wipe to factory state
+  0) Exit
+? Choose action [1]: 1
+? Enter URL [https://bambulab.com]:
+  ✓ Image built: "https://bambulab.com" (data sectors: 1)
+? Write? This is irreversible (y/n) [y]: y
+  Tag secured — unlocking...
   unlock sector  0 OK
-  unlock sector  1 OK
-    … (секторы 2–14)
-  unlock sector 15 OK
-  Пишу образ (держите тег неподвижно)...
-  write sector  0 (3 блоков)
-  write sector  1 (4 блоков)
-    … (секторы 2–14)
-  write sector 15 (4 блоков)
-  ✓ Записано и проверено на уровне блоков
-  Контрольное чтение...
+    … (sectors 1–15)
+  Writing image (hold the tag still)...
+  write sector  0 (3 blocks)
+  write sector  1 (4 blocks)
+    … (sectors 2–15)
+  ✓ Written and verified at block level
+  Verification read...
   read sector  0 (4/4)
-    … (секторы 1–15)
+    … (sectors 1–15)
 
-✓ Готово! На метке ссылка: https://bambulab.com
+✓ Done! Tag now holds link: https://bambulab.com
 ```
 
-Для **уже перезаписанной** метки диагностика покажет `Тип метки: Перезаписана в NDEF-метку`,
-`Засекречена: НЕТ`, а в меню появится пункт **«Показать ссылку с метки»**.
+For an **already rewritten** tag the diagnosis shows `Tag type: Rewritten as NDEF tag`,
+`Secured: NO`, and a **"Show link on tag"** item appears in the menu.
 
 ---
 
-## Файлы
+## Files
 
-| Файл | Назначение |
+| File | Purpose |
 |---|---|
-| `bambu_nfc.py` | Главный интерактивный скрипт (меню + прогресс) |
-| `nfc_helper.c` | C-хелпер libnfc: `uid` / `diag` / `unlock` / `write` / `read` |
-| `bambu_keys.py` | Деривация KeyA/KeyB из UID; генерация keyfile |
-| `build_target.py` | Сборка NDEF-образа (отдельно от `bambu_nfc.py`) |
+| `bambu_nfc.py` | Main interactive script (menu + progress, RU/EN) |
+| `nfc_helper.c` | libnfc C helper: `uid` / `diag` / `unlock` / `write` / `read` |
+| `bambu_keys.py` | Derives KeyA/KeyB from UID; generates a keyfile |
+| `build_target.py` | Builds an NDEF image (standalone, apart from `bambu_nfc.py`) |
 
-Остальные `*.c` (`keytest`, `mapB`, `phase1_unlock`, `robust_write`, …) —
-исследовательские утилиты, использованные при разборе формата; для работы не нужны.
+The other `*.c` files (`keytest`, `mapB`, `phase1_unlock`, `robust_write`, …) are
+research utilities used while reverse-engineering the format; not needed for normal use.
 
-### Отдельная генерация ключей
+### Standalone key generation
 
 ```bash
 python3 bambu_keys.py <UID_hex> [keyfile.mfd]
-# пример:
+# example:
 python3 bambu_keys.py 02158BEF fullkeys.mfd
 ```
 
 ---
 
-## Важно знать
+## Good to know
 
-- **Перезапись необратима для назначения Bambu**: после записи URL принтер
-  перестанет распознавать катушку. Метка при этом остаётся восстановимой
-  (публичные/заводские ключи известны), её можно стереть или перезаписать снова.
-- **iPhone не читает MIFARE Classic** (Core NFC не поддерживает этот чип) —
-  записанный на такую метку URL на iPhone не откроется. Читают часть Android
-  (с NXP-контроллером) и, конечно, сам PN532. Для универсальной ссылки-метки,
-  читаемой любым телефоном, нужен чип **NTAG213/215**, а не Bambu-тег.
+- **Rewriting is irreversible for Bambu's purpose**: after writing a URL the
+  printer will no longer recognize the spool. The tag itself stays recoverable
+  (public/factory keys are known) — you can wipe or rewrite it again.
+- **iPhone cannot read MIFARE Classic** (Core NFC does not support this chip),
+  so a URL written to such a tag will not open on an iPhone. It is read by some
+  Android phones (with an NXP controller) and, of course, by the PN532 itself.
+  For a universal link tag readable by any phone, use an **NTAG213/215** chip,
+  not a Bambu tag.
 
 ---
 
-## Устранение неполадок
+## Troubleshooting
 
-| Симптом | Решение |
+| Symptom | Fix |
 |---|---|
-| `No NFC device found` | Проверьте порт (`ls /dev/cu.usbserial-*`) и путь конфига в `Cellar/.../etc/nfc` |
-| UID скачет / считается неверно | Метка «гуляет» — прижмите её к центру антенны и держите неподвижно |
-| `write-fail` на секторе | Реальный отказ доступа — приложите метку плотнее и повторите |
-| Скрипт не собирает `nfc_helper` | Соберите вручную (см. шаг 4), проверьте `xcode-select --install` |
+| `No NFC device found` | Check the port (`ls /dev/cu.usbserial-*`) and the config path under `Cellar/.../etc/nfc` |
+| UID jumps / reads wrong | The tag drifts — press it to the center of the antenna and hold still |
+| `write-fail` on a sector | A real access denial — press the tag closer and retry |
+| Script won't build `nfc_helper` | Build manually (see step 4), check `xcode-select --install` |
 
 ---
 
-## Дисклеймер
+## Disclaimer
 
-Инструмент создан для исследовательских и совместимых целей (использование
-сторонних катушек, восстановление меток). Используйте на своих метках и
-на свой риск.
+This tool is for research and interoperability purposes (using third-party spools,
+recovering tags). Use it on your own tags and at your own risk.
