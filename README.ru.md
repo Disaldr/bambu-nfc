@@ -1,6 +1,21 @@
-[English](README.md) | **Русский**
+<div align="center">
 
-# Bambu NFC — чтение и перезапись тегов катушек Bambu Lab
+# ☕ Bambu NFC
+
+**Чтение и перезапись меток катушек Bambu Lab через PN532**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![Python](https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white)
+
+[![English](https://img.shields.io/badge/lang-English-lightgrey?style=for-the-badge)](README.md)
+[![Русский](https://img.shields.io/badge/lang-Русский-2ea44f?style=for-the-badge)](README.ru.md)
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/disaldr)
+
+</div>
+
+---
 
 Инструмент для работы с RFID-метками катушек филамента **Bambu Lab** (MIFARE Classic 1K)
 через ридер **PN532** на macOS. Определяет состояние метки, показывает данные филамента,
@@ -229,6 +244,24 @@ python3 bambu_keys.py 02158BEF fullkeys.mfd
 | UID скачет / считается неверно | Метка «гуляет» — прижмите её к центру антенны и держите неподвижно |
 | `write-fail` на секторе | Реальный отказ доступа — приложите метку плотнее и повторите |
 | Скрипт не собирает `nfc_helper` | Соберите вручную (см. шаг 4), проверьте `xcode-select --install` |
+
+---
+
+## Поддержать
+
+Если это сэкономило вам время — можно угостить меня кофе ☕
+
+<div align="center">
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-buymeacoffee.com%2Fdisaldr-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/disaldr)
+
+</div>
+
+---
+
+## Лицензия
+
+Распространяется под [лицензией MIT](LICENSE).
 
 ---
 

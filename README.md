@@ -1,6 +1,21 @@
-**English** | [Русский](README.ru.md)
+<div align="center">
 
-# Bambu NFC — read & rewrite Bambu Lab spool tags
+# ☕ Bambu NFC
+
+**Read &amp; rewrite Bambu Lab spool tags with a PN532**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![Python](https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white)
+
+[![English](https://img.shields.io/badge/lang-English-2ea44f?style=for-the-badge)](README.md)
+[![Русский](https://img.shields.io/badge/lang-Русский-lightgrey?style=for-the-badge)](README.ru.md)
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/disaldr)
+
+</div>
+
+---
 
 A tool for the RFID tags on **Bambu Lab** filament spools (MIFARE Classic 1K)
 using a **PN532** reader on macOS. It diagnoses the tag state, shows filament
@@ -230,6 +245,24 @@ python3 bambu_keys.py 02158BEF fullkeys.mfd
 | UID jumps / reads wrong | The tag drifts — press it to the center of the antenna and hold still |
 | `write-fail` on a sector | A real access denial — press the tag closer and retry |
 | Script won't build `nfc_helper` | Build manually (see step 4), check `xcode-select --install` |
+
+---
+
+## Support
+
+If this saved you some time, you can buy me a coffee ☕
+
+<div align="center">
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-buymeacoffee.com%2Fdisaldr-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/disaldr)
+
+</div>
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).
 
 ---
 
