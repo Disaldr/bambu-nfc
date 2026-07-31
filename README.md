@@ -138,6 +138,7 @@ The script, step by step:
 3. Shows an **actions menu** adapted to the current state:
    - Write data — URL, text, Wi-Fi (SSID + password) or raw bytes; unlocks automatically if needed
    - Clone another Bambu spool — copy filament data from a saved `.mfd` dump
+   - Craft a Bambu spool — build filament data from a preset or parameters
    - Show tag content (auto-detects URL / text / Wi-Fi / raw)
    - Show Bambu filament data (type, color, weight, diameter)
    - Save a dump to a file
@@ -154,15 +155,21 @@ The script, step by step:
 
 Long values automatically span several sectors.
 
-### Cloning another spool
+### Cloning or crafting a spool
 
-*Clone another Bambu spool* writes the filament data from a saved `.mfd` dump
-(made with *Save dump to file*) onto the current tag, re-keyed to this tag's UID
-and re-locked to factory access.
+- *Clone another Bambu spool* writes the filament data from a saved `.mfd` dump
+  (made with *Save dump to file*) onto the current tag, re-keyed to this tag's UID
+  and re-locked to factory access.
+- *Craft a Bambu spool* builds the filament data from parameters — pick a preset
+  (including presets auto-read from your own dumps) or enter the Material ID, type,
+  color, weight and temperatures manually.
 
-⚠️ The tag keeps its **own UID**, while a Bambu tag's RSA signature is tied to the
-UID it was made for. So the signature won't match, and printers that verify it may
-reject the cloned spool. Restoring a dump onto **its own** tag works fully.
+⚠️ A Bambu tag carries an **RSA-2048 signature** made with Bambu's private key,
+which cannot be forged. A cloned dump keeps a signature for the *source* UID, and a
+crafted spool has none — so a printer that verifies the signature may reject them.
+This works on firmware that does **not** verify the signature (historically the
+case), and restoring a dump onto **its own** tag works fully. The filament data
+itself is always written correctly.
 
 ### Debug
 
@@ -198,9 +205,10 @@ PN532 + libnfc. State diagnosis and available actions.
 ━━━ Available actions ━━━
   1) Write data (URL / text / Wi-Fi / raw)
   2) Clone another Bambu spool (from a dump)
-  3) Show Bambu filament data
-  4) Save dump to file
-  5) Wipe to factory state
+  3) Craft a Bambu spool (from parameters)
+  4) Show Bambu filament data
+  5) Save dump to file
+  6) Wipe to factory state
   0) Exit
 ? Choose action [1]: 1
 

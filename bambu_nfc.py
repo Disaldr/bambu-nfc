@@ -106,6 +106,24 @@ STRINGS = {
         "spool_sig_warn": "The tag keeps its own UID, so the source RSA signature won't match — "
                           "printers that verify it may reject the spool. Restoring a dump onto its own tag works fully.",
         "spool_done": "Bambu spool written: {desc}",
+        "menu_craft_spool": "Craft a Bambu spool (from parameters)",
+        "craft_pick": "Choose material",
+        "craft_custom": "Custom (enter IDs manually)",
+        "craft_codes_note": "Preset material codes are typical values — verify against a real spool if unsure.",
+        "craft_preview": "Spool to write: {desc}",
+        "enter_variant": "Material Variant ID",
+        "enter_material": "Material ID",
+        "enter_ftype": "Filament type",
+        "enter_detailed": "Detailed type",
+        "enter_color": "Color RGBA hex",
+        "enter_weight": "Weight, grams",
+        "enter_diameter": "Diameter, mm",
+        "enter_dry_temp": "Drying temperature, C",
+        "enter_dry_time": "Drying time, hours",
+        "enter_bed_temp": "Bed temperature, C",
+        "enter_hot_min": "Hotend min temperature, C",
+        "enter_hot_max": "Hotend max temperature, C",
+        "bad_color": "Invalid color hex.",
     },
     "ru": {
         "app_title": "Bambu NFC — инструмент метки катушки",
@@ -192,6 +210,24 @@ STRINGS = {
         "spool_sig_warn": "Метка сохраняет свой UID, поэтому RSA-подпись исходной катушки не совпадёт — "
                           "принтеры, проверяющие её, могут отклонить катушку. Восстановление дампа на свою же метку работает полностью.",
         "spool_done": "Катушка Bambu записана: {desc}",
+        "menu_craft_spool": "Собрать катушку Bambu (из параметров)",
+        "craft_pick": "Выберите материал",
+        "craft_custom": "Вручную (ввести ID самому)",
+        "craft_codes_note": "Коды материалов в пресетах — типовые; при сомнении сверьтесь с реальной катушкой.",
+        "craft_preview": "Катушка для записи: {desc}",
+        "enter_variant": "Material Variant ID",
+        "enter_material": "Material ID",
+        "enter_ftype": "Тип филамента",
+        "enter_detailed": "Детальный тип",
+        "enter_color": "Цвет RGBA hex",
+        "enter_weight": "Вес, граммы",
+        "enter_diameter": "Диаметр, мм",
+        "enter_dry_temp": "Температура сушки, °C",
+        "enter_dry_time": "Время сушки, часы",
+        "enter_bed_temp": "Температура стола, °C",
+        "enter_hot_min": "Мин. температура сопла, °C",
+        "enter_hot_max": "Макс. температура сопла, °C",
+        "bad_color": "Некорректный hex цвета.",
     },
 }
 
@@ -409,6 +445,62 @@ def bambu_desc(b):
         return "?"
     return f"{b['type']} / {b['detailed']}, #{b['color']}, {b['weight']}g"
 
+# --- крафт катушки из параметров (по документированным смещениям блоков) ---
+BUILTIN_PRESETS = [
+    dict(name="PLA Basic", variant="A00-K0", material="GFA00", ftype="PLA", detailed="PLA Basic",
+         dry_temp=55, dry_time=8, bed_temp=35, hot_min=190, hot_max=230, diameter=1.75),
+    dict(name="PLA Matte", variant="A01-K0", material="GFA01", ftype="PLA", detailed="PLA Matte",
+         dry_temp=55, dry_time=8, bed_temp=35, hot_min=190, hot_max=230, diameter=1.75),
+    dict(name="PETG HF", variant="G02-K0", material="GFG02", ftype="PETG", detailed="PETG HF",
+         dry_temp=65, dry_time=8, bed_temp=70, hot_min=220, hot_max=260, diameter=1.75),
+    dict(name="ABS", variant="B00-K0", material="GFB00", ftype="ABS", detailed="ABS",
+         dry_temp=80, dry_time=8, bed_temp=90, hot_min=240, hot_max=270, diameter=1.75),
+    dict(name="TPU 95A", variant="U01-K0", material="GFU01", ftype="TPU", detailed="TPU 95A",
+         dry_temp=70, dry_time=8, bed_temp=35, hot_min=200, hot_max=240, diameter=1.75),
+]
+
+def _rdstr(d, o, l): return d[o:o+l].split(b"\x00")[0].decode("ascii", "replace")
+def _rdf32(d, o):
+    try: return struct.unpack("<f", d[o:o+4])[0]
+    except struct.error: return 0.0
+
+def _put_str(d, off, s, ln):
+    b = str(s).encode("ascii", "replace")[:ln]
+    d[off:off+ln] = b + b"\x00" * (ln - len(b))
+def _put_u16(d, off, v): d[off:off+2] = int(v).to_bytes(2, "little", signed=False)
+def _put_f32(d, off, v): d[off:off+4] = struct.pack("<f", float(v))
+
+def build_crafted_spool(uid, p):
+    """Собирает валидную структуру Bambu-катушки из параметров. Подпись (сект.10-15) = нули."""
+    ka = derive_keys(uid, CONTEXT_A); kb = derive_keys(uid, CONTEXT_B)
+    d = bytearray(1024)
+    _put_str(d, 16, p["variant"], 8); _put_str(d, 24, p["material"], 8)   # блок 1: Tray Info Index
+    _put_str(d, 32, p["ftype"], 16)                                       # блок 2: Filament Type
+    _put_str(d, 64, p["detailed"], 16)                                    # блок 4: Detailed Type
+    d[80:84] = p["color"]                                                 # блок 5: цвет RGBA
+    _put_u16(d, 84, p["weight"]); _put_f32(d, 88, p["diameter"])          #         вес, диаметр
+    _put_u16(d, 96, p["dry_temp"]); _put_u16(d, 98, p["dry_time"])        # блок 6: сушка
+    _put_u16(d, 102, p["bed_temp"])                                       #         температура стола
+    _put_u16(d, 104, p["hot_max"]); _put_u16(d, 106, p["hot_min"])        #         сопло max/min
+    _put_f32(d, 140, p.get("nozzle", 0.4))                               # блок 8: диаметр сопла
+    _put_u16(d, 164, p.get("width", 6625))                               # блок 10: ширина катушки
+    _put_str(d, 192, p.get("date", "2024_01_01_00_00"), 16)              # блок 12: дата производства
+    _put_u16(d, 228, p.get("length", 330))                              # блок 14: длина, м
+    for s in range(16):
+        d[s*64+48:s*64+64] = ka[s] + ACCESS_BITS + kb[s]
+    return bytes(d)
+
+def _preset_from_dump(fn, data):
+    b = parse_bambu(data)
+    if not b:
+        return None
+    return dict(name=f"{b['detailed'] or b['type']}  [{fn}]",
+                variant=_rdstr(data, 16, 8), material=b["mat"], ftype=b["type"], detailed=b["detailed"],
+                dry_temp=int.from_bytes(data[96:98], "little"), dry_time=int.from_bytes(data[98:100], "little"),
+                bed_temp=int.from_bytes(data[102:104], "little"),
+                hot_max=int.from_bytes(data[104:106], "little"), hot_min=int.from_bytes(data[106:108], "little"),
+                diameter=_rdf32(data, 88), color=data[80:84], weight=int.from_bytes(data[84:86], "little"))
+
 # ============================ NDEF / контент: разбор ============================
 def _data_stream(dump):
     out = bytearray()
@@ -590,6 +682,29 @@ def _refresh_from_target(ctx, target):
     acc = {target[s*64+54:s*64+58].hex().upper() for s in range(16)}
     ctx["locked"] = (ACC_LOCKED in acc)
 
+def _ask_int(key, default):
+    try:
+        return int(ask(T(key), str(default)))
+    except ValueError:
+        return int(default)
+
+def _ask_float(key, default):
+    try:
+        return float(ask(T(key), str(default)))
+    except ValueError:
+        return float(default)
+
+def _parse_color(s):
+    s = s.strip().lstrip("#")
+    if len(s) == 6:
+        s += "FF"
+    if len(s) != 8:
+        return None
+    try:
+        return bytes.fromhex(s)
+    except ValueError:
+        return None
+
 def _pick_datatype():
     opts = [("type_url",), ("type_text",), ("type_wifi",), ("type_raw",)]
     hdr(T("hdr_datatype"))
@@ -688,6 +803,52 @@ def act_write_spool(ctx):
     print(f"\n{BOLD}{GRN}✓ {T('spool_done', desc=bambu_desc(parse_bambu(dump)))}{RST}")
     ctx["dump"] = dump
 
+def act_craft_spool(ctx):
+    presets = [p for p in (_preset_from_dump(fn, data) for fn, data, _ in _list_dumps()) if p]
+    presets += BUILTIN_PRESETS
+    hdr(T("craft_pick"))
+    for i, p in enumerate(presets, 1):
+        print(f"  {BOLD}{i}{RST}) {p['name']}")
+    print(f"  {BOLD}{len(presets)+1}{RST}) {T('craft_custom')}")
+    info(T("craft_codes_note"))
+    sel = ask(T("craft_pick"), "1")
+    idx = int(sel) - 1 if sel.isdigit() else -1
+
+    if idx == len(presets):                          # custom
+        p = dict(variant=ask(T("enter_variant"), "A00-K0"), material=ask(T("enter_material"), "GFA00"),
+                 ftype=ask(T("enter_ftype"), "PLA"), detailed=ask(T("enter_detailed"), "PLA Basic"),
+                 dry_temp=_ask_int("enter_dry_temp", 55), dry_time=_ask_int("enter_dry_time", 8),
+                 bed_temp=_ask_int("enter_bed_temp", 35), hot_min=_ask_int("enter_hot_min", 190),
+                 hot_max=_ask_int("enter_hot_max", 230), diameter=_ask_float("enter_diameter", 1.75))
+        default_color, default_weight = "000000FF", 1000
+    elif 0 <= idx < len(presets):
+        p = dict(presets[idx])
+        default_color = p["color"].hex().upper() if p.get("color") else "000000FF"
+        default_weight = p.get("weight", 1000)
+    else:
+        warn(T("no_such_item")); return
+
+    color = _parse_color(ask(T("enter_color"), default_color))
+    if not color:
+        err(T("bad_color")); return
+    p["color"] = color
+    p["weight"] = _ask_int("enter_weight", default_weight)
+    p.setdefault("diameter", 1.75)
+
+    target = build_crafted_spool(ctx["uid"], p)
+    ok(T("craft_preview", desc=bambu_desc(parse_bambu(target))))
+    warn(T("spool_sig_warn"))
+    if not confirm(f"{BOLD}{T('write_confirm')}{RST}"):
+        info(T("cancelled")); return
+
+    write_keyfile(ctx["uid"])
+    dump = do_write(target, ctx["locked"], KEYS_FILE)
+    if dump is None:
+        return
+    _refresh_from_target(ctx, target)
+    print(f"\n{BOLD}{GRN}✓ {T('spool_done', desc=bambu_desc(parse_bambu(dump)))}{RST}")
+    ctx["dump"] = dump
+
 def act_show_content(ctx):
     c = describe_content(ctx["dump"]) if ctx.get("dump") else None
     if c:
@@ -730,7 +891,8 @@ def build_menu(ctx):
     has_content = bool(describe_content(ctx["dump"])) if ctx.get("dump") else False
     has_binfo = bool(parse_bambu(ctx["dump"])) if ctx.get("dump") else False
     menu = [(T("menu_write_data"), act_write_data),
-            (T("menu_write_spool"), act_write_spool)]
+            (T("menu_write_spool"), act_write_spool),
+            (T("menu_craft_spool"), act_craft_spool)]
     if has_content:
         menu.append((T("menu_show_content"), act_show_content))
     if has_binfo:
