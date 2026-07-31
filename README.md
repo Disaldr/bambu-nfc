@@ -19,7 +19,8 @@
 
 A tool for the RFID tags on **Bambu Lab** filament spools (MIFARE Classic 1K)
 using a **PN532** reader on macOS. It diagnoses the tag state, shows filament
-data, dumps the tag, and rewrites it into a standard **NDEF tag holding a link (URL)**.
+data, dumps the tag, and rewrites it with your data — a **URL, plain text,
+Wi-Fi credentials, or raw bytes** (as a standard NDEF tag).
 
 The tag's encryption keys (KeyA and KeyB) are **derived from the UID** — no cracking required:
 
@@ -135,11 +136,33 @@ The script, step by step:
    | Unknown | ? |
 
 3. Shows an **actions menu** adapted to the current state:
-   - Write a link (URL) — unlocks automatically if needed
-   - Show the link on the tag (if NDEF present)
+   - Write data — URL, text, Wi-Fi (SSID + password) or raw bytes; unlocks automatically if needed
+   - Clone another Bambu spool — copy filament data from a saved `.mfd` dump
+   - Show tag content (auto-detects URL / text / Wi-Fi / raw)
    - Show Bambu filament data (type, color, weight, diameter)
    - Save a dump to a file
    - Wipe to factory state
+
+### Supported data types
+
+| Type | What is written |
+|---|---|
+| URL | NDEF URI record (`https://…`, `tel:`, `mailto:`, …) |
+| Text | NDEF Text record (UTF-8) |
+| Wi-Fi | NDEF Wi-Fi Simple Config (SSID + password, WPA2/AES) — tap-to-join on supported phones |
+| Raw bytes | Arbitrary hex written into the data blocks (no NDEF wrapper) |
+
+Long values automatically span several sectors.
+
+### Cloning another spool
+
+*Clone another Bambu spool* writes the filament data from a saved `.mfd` dump
+(made with *Save dump to file*) onto the current tag, re-keyed to this tag's UID
+and re-locked to factory access.
+
+⚠️ The tag keeps its **own UID**, while a Bambu tag's RSA signature is tied to the
+UID it was made for. So the signature won't match, and printers that verify it may
+reject the cloned spool. Restoring a dump onto **its own** tag works fully.
 
 ### Debug
 
@@ -173,14 +196,22 @@ PN532 + libnfc. State diagnosis and available actions.
   data blocks are write-protected; writing will unlock them automatically.
 
 ━━━ Available actions ━━━
-  1) Write link (URL)
-  2) Show Bambu filament data
-  3) Save dump to file
-  4) Wipe to factory state
+  1) Write data (URL / text / Wi-Fi / raw)
+  2) Clone another Bambu spool (from a dump)
+  3) Show Bambu filament data
+  4) Save dump to file
+  5) Wipe to factory state
   0) Exit
 ? Choose action [1]: 1
+
+━━━ Data type ━━━
+  1) URL / link
+  2) Plain text
+  3) Wi-Fi network (SSID + password)
+  4) Raw bytes (hex)
+? Choose action [1]: 1
 ? Enter URL [https://bambulab.com]:
-  ✓ Image built: "https://bambulab.com" (data sectors: 1)
+  ✓ Image built: URL: https://bambulab.com (data sectors: 1)
 ? Write? This is irreversible (y/n) [y]: y
   Tag secured — unlocking...
   unlock sector  0 OK
@@ -194,11 +225,11 @@ PN532 + libnfc. State diagnosis and available actions.
   read sector  0 (4/4)
     … (sectors 1–15)
 
-✓ Done! Tag now holds link: https://bambulab.com
+✓ Done! Tag now holds: URL: https://bambulab.com
 ```
 
 For an **already rewritten** tag the diagnosis shows `Tag type: Rewritten as NDEF tag`,
-`Secured: NO`, and a **"Show link on tag"** item appears in the menu.
+`Secured: NO`, and a **"Show tag content"** item appears in the menu.
 
 ---
 
