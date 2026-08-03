@@ -124,6 +124,14 @@ STRINGS = {
         "enter_hot_min": "Hotend min temperature, C",
         "enter_hot_max": "Hotend max temperature, C",
         "bad_color": "Invalid color hex.",
+        "hdr_reader": "NFC reader",
+        "reader_env": "Using BAMBU_NFC_DEV={dev}",
+        "reader_scan": "Looking for the reader...",
+        "reader_found": "{name} on {port}",
+        "reader_many": "Several readers responded — pick one:",
+        "reader_choose": "Reader number",
+        "reader_none": "No reader auto-detected — falling back to the libnfc config.",
+        "reader_no_ports": "No USB serial ports found. Is the reader plugged in?",
     },
     "ru": {
         "app_title": "Bambu NFC — инструмент метки катушки",
@@ -228,6 +236,14 @@ STRINGS = {
         "enter_hot_min": "Мин. температура сопла, °C",
         "enter_hot_max": "Макс. температура сопла, °C",
         "bad_color": "Некорректный hex цвета.",
+        "hdr_reader": "NFC-ридер",
+        "reader_env": "Использую BAMBU_NFC_DEV={dev}",
+        "reader_scan": "Ищу ридер...",
+        "reader_found": "{name} на {port}",
+        "reader_many": "Ответило несколько ридеров — выберите один:",
+        "reader_choose": "Номер ридера",
+        "reader_none": "Ридер не определился автоматически — использую конфиг libnfc.",
+        "reader_no_ports": "USB-портов не найдено. Ридер подключён?",
     },
 }
 
@@ -304,6 +320,81 @@ def ensure_helper():
     if r.returncode != 0:
         err(T("helper_build_fail")); print(r.stderr); sys.exit(1)
     ok(T("helper_built"))
+
+# ============================ поиск ридера ============================
+# PN532-платы висят на USB-UART мосте (CH340/CP210x/FTDI): на macOS это /dev/cu.*,
+# на Linux — ttyUSB*/ttyACM*. Имя порта не закреплено за устройством и меняется
+# при перетыкании, поэтому ищем его каждый запуск, а не держим в конфиге libnfc.
+SERIAL_PATTERNS = ("usbserial", "wchusbserial", "usbmodem", "slab_usbtouart", "ttyusb", "ttyacm")
+SERIAL_SKIP = ("bluetooth", "debug-console")
+
+def list_serial_ports():
+    try:
+        names = os.listdir("/dev")
+    except OSError:
+        return []
+    out = []
+    for n in sorted(names):
+        low = n.lower()
+        if sys.platform == "darwin" and not low.startswith("cu."):
+            continue
+        if any(s in low for s in SERIAL_SKIP):
+            continue
+        if any(p in low for p in SERIAL_PATTERNS):
+            out.append("/dev/" + n)
+    return out
+
+def probe_port(port):
+    """Открывает ридер на порту; возвращает имя устройства или None, если это не PN532."""
+    env = dict(os.environ, BAMBU_NFC_DEV=f"pn532_uart:{port}")
+    try:
+        r = subprocess.run([HELPER, "dev"], capture_output=True, text=True, timeout=15, env=env)
+    except subprocess.TimeoutExpired:
+        return None
+    name = r.stdout.strip()
+    return name if r.returncode == 0 and name else None
+
+def detect_reader():
+    """Ставит BAMBU_NFC_DEV — его подхватывает nfc_helper. Молчит, если задан извне."""
+    hdr(T("hdr_reader"))
+    preset = os.environ.get("BAMBU_NFC_DEV", "").strip()
+    if preset:
+        info(T("reader_env", dev=preset))
+        return
+
+    ports = list_serial_ports()
+    if not ports:
+        warn(T("reader_no_ports"))
+        info(T("reader_none"))
+        return
+
+    info(T("reader_scan"))
+    found = []
+    for p in ports:
+        name = probe_port(p)
+        if name:
+            found.append((p, name))
+
+    if not found:
+        warn(T("reader_none"))
+        return
+
+    idx = 0
+    if len(found) > 1:
+        print(f"  {T('reader_many')}")
+        for i, (p, name) in enumerate(found, 1):
+            print(f"  {BOLD}{i}{RST}) {name} — {p}")
+        while True:
+            try:
+                idx = int(ask(T("reader_choose"), "1")) - 1
+                assert 0 <= idx < len(found)
+                break
+            except (ValueError, AssertionError):
+                warn(T("no_such_item"))
+
+    port, name = found[idx]
+    os.environ["BAMBU_NFC_DEV"] = f"pn532_uart:{port}"
+    ok(T("reader_found", name=name, port=port))
 
 def helper(*args, stream=False):
     if not stream:
@@ -905,6 +996,7 @@ def main():
     print(f"{BOLD}{T('app_title')}{RST}")
     print(f"{DIM}{T('app_sub')}{RST}")
     ensure_helper()
+    detect_reader()
 
     hdr(T("hdr_detect"))
     wait_tag()

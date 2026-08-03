@@ -16,8 +16,11 @@ static const uint8_t FF[6]={0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 static const uint8_t MADK[6]={0xA0,0xA1,0xA2,0xA3,0xA4,0xA5};
 static const uint8_t NDEFK[6]={0xD3,0xF7,0xD3,0xF7,0xD3,0xF7};
 
+// connstring берём из BAMBU_NFC_DEV (его подставляет bambu_nfc.py после автопоиска),
+// иначе NULL — тогда libnfc идёт по своему конфигу/автоскану.
 static int open_dev(void){
-    nfc_init(&ctx); pnd=nfc_open(ctx,NULL);
+    const char *cs=getenv("BAMBU_NFC_DEV");
+    nfc_init(&ctx); pnd=nfc_open(ctx,(cs&&*cs)?cs:NULL);
     if(!pnd){ fprintf(stderr,"NFC-устройство не найдено\n"); return 0; }
     nfc_initiator_init(pnd);
     nfc_device_set_property_bool(pnd,NP_EASY_FRAMING,true);
@@ -51,6 +54,8 @@ static int load(const char*path,uint8_t*buf){
 }
 
 // ---- команды ----
+// dev: тег не нужен — просто подтверждаем, что на этом connstring есть живой ридер
+static int cmd_dev(void){ printf("%s\n", nfc_device_get_name(pnd)); return 0; }
 static int cmd_uid(void){
     uint8_t uid[10],ul;
     for(int i=0;i<10;i++){ if(do_select(uid,&ul)){
@@ -176,10 +181,11 @@ static int cmd_read(uint8_t*K,const char*out){
 }
 
 int main(int argc,char**argv){
-    if(argc<2){ fprintf(stderr,"usage: nfc_helper uid|diag|probe|unlock|write|read ...\n"); return 2; }
+    if(argc<2){ fprintf(stderr,"usage: nfc_helper dev|uid|diag|probe|unlock|write|read ...\n"); return 2; }
     if(!open_dev()) return 3;
     int rc=2; uint8_t K[1024],T[1024];
-    if(!strcmp(argv[1],"uid"))                    rc=cmd_uid();
+    if(!strcmp(argv[1],"dev"))                    rc=cmd_dev();
+    else if(!strcmp(argv[1],"uid"))               rc=cmd_uid();
     else if(!strcmp(argv[1],"diag")   && argc>=3 && load(argv[2],K)) rc=cmd_diag(K);
     else if(!strcmp(argv[1],"probe")  && argc>=3 && load(argv[2],K)) rc=cmd_probe(K);
     else if(!strcmp(argv[1],"unlock") && argc>=3 && load(argv[2],K)) rc=cmd_unlock(K);

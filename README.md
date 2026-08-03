@@ -59,20 +59,27 @@ brew install libnfc
 
 The Python script uses only the standard library — no extra packages needed.
 
-### 2. Find the reader's port
+### 2. Plug in the reader
 
-Plug in the PN532 and find its port:
+That's it — `bambu_nfc.py` finds the port itself on every run. It scans the USB
+serial ports (`/dev/cu.*` on macOS, `ttyUSB*`/`ttyACM*` on Linux), opens each one
+and keeps those that answer as a PN532. If several readers answer, it asks which
+one to use; if exactly one does, it just uses it.
+
+This matters because macOS renames the port when you replug the board
+(`usbserial-110` → `usbserial-210`), which would break a hardcoded config.
+
+To pin a specific device and skip the scan, set the connstring yourself:
 
 ```bash
-ls /dev/cu.usbserial-*
+BAMBU_NFC_DEV=pn532_uart:/dev/cu.usbserial-210 python3 bambu_nfc.py
 ```
 
-For example `/dev/cu.usbserial-110`. Remember this value for the next step.
+### 3. Optional: configure libnfc
 
-### 3. Configure libnfc for PN532 UART
-
-Homebrew's libnfc looks for its config **inside Cellar**, not in `/opt/homebrew/etc`.
-Create the device description (substitute your own port and libnfc version):
+Not needed for `bambu_nfc.py` — only for the stock `nfc-list` / `nfc-mfclassic`
+tools, which have no auto-detection. Homebrew's libnfc looks for its config
+**inside Cellar**, not in `/opt/homebrew/etc`:
 
 ```bash
 NFC_DIR="/opt/homebrew/Cellar/libnfc/1.8.0/etc/nfc"
@@ -81,8 +88,8 @@ mkdir -p "$NFC_DIR/devices.d"
 # allow intrusive scan
 printf 'allow_intrusive_scan = true\n' > "$NFC_DIR/libnfc.conf"
 
-# PN532 UART description (replace the port with yours)
-printf 'name = "PN532 UART"\nconnstring = "pn532_uart:/dev/cu.usbserial-110"\n' \
+# PN532 UART description (replace the port with yours — see `ls /dev/cu.usbserial-*`)
+printf 'name = "PN532 UART"\nconnstring = "pn532_uart:/dev/cu.usbserial-210"\n' \
   > "$NFC_DIR/devices.d/pn532_uart.conf"
 ```
 
@@ -92,8 +99,7 @@ Check the reader (no tag needed):
 nfc-list
 ```
 
-You should see `NFC device: PN532 UART opened`. If it says `No NFC device found`,
-check the port and that the config sits under `Cellar/.../etc/nfc`.
+You should see `NFC device: PN532 UART opened`.
 
 ### 4. Build the C helper
 
@@ -280,7 +286,7 @@ python3 bambu_keys.py 02158BEF fullkeys.mfd
 
 | Symptom | Fix |
 |---|---|
-| `No NFC device found` | Check the port (`ls /dev/cu.usbserial-*`) and the config path under `Cellar/.../etc/nfc` |
+| `No NFC device found` | Replug the reader and rerun — the port is auto-detected. To force one: `BAMBU_NFC_DEV=pn532_uart:/dev/cu.usbserial-XXX`. Test a port with `BAMBU_NFC_DEV=... ./nfc_helper dev` |
 | UID jumps / reads wrong | The tag drifts — press it to the center of the antenna and hold still |
 | `write-fail` on a sector | A real access denial — press the tag closer and retry |
 | Script won't build `nfc_helper` | Build manually (see step 4), check `xcode-select --install` |
